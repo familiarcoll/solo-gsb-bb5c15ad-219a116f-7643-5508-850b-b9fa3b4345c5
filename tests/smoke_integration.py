@@ -56,12 +56,29 @@ print("2. 两版配方解析与过敏原传播 OK")
 print("   A 版过敏原:", va["allergens"])
 print("   B 版过敏原:", vb["allergens"])
 
-# 3. 标签核对（对照 B 版）
-check = compare_label(vb["allergens"], DECLARED)
+# 3. 标签核对（对照 B 版，含遗漏来源路径）
+check = compare_label(vb["allergens"], DECLARED, vb["tree"])
 assert check["missing"] == ["坚果", "芝麻"], check
 assert check["over_reported"] == [], check
 assert check["matched"] == ["蛋类", "麸质谷物"], check
+assert check["missing_sources"]["坚果"] == [["巧克力酱", "椰子粉"]], check
+assert check["missing_sources"]["芝麻"] == [["芝麻酱", "芝麻"]], check
 print("3. 标签核对 OK  遗漏:", check["missing"], " 多报:", check["over_reported"])
+print("   来源路径:", check["missing_sources"])
+
+# 3b. 同名原料处于不同分支时来源路径分别保留，不合并
+tree_c = parse_recipe("巧克力酱（奶粉（乳清粉）），夹心酱（奶粉（乳清粉））")
+attach_allergens(tree_c, dictionary)
+vc = build_version(tree_c)
+check_c = compare_label(vc["allergens"], [], vc["tree"])
+assert check_c["missing_sources"]["乳"] == [
+    ["夹心酱", "奶粉"],
+    ["夹心酱", "奶粉", "乳清粉"],
+    ["巧克力酱", "奶粉"],
+    ["巧克力酱", "奶粉", "乳清粉"],
+], check_c["missing_sources"]
+# 父节点自身标注与子配料传播各产生一条路径；同名分支分别保留、不合并
+print("3b. 同名分支路径不合并 / 自身标注+子配料传播 OK")
 
 # 4. 版本对比
 diff = diff_allergens(va["allergens"], vb["allergens"])
@@ -85,7 +102,21 @@ review = db.get_review(rid)
 html_report = render_html_report(review)
 md_report = render_markdown_report(review)
 assert "标签遗漏" in html_report and "坚果" in html_report and "芝麻" in html_report
+assert "巧克力酱" in html_report and "来源路径" in html_report
+assert "巧克力酱 › 椰子粉" in md_report and "芝麻酱 › 芝麻" in md_report
 assert "# 食品过敏原标签审查报告" in md_report and "新增过敏原" in md_report
 assert len(db.list_reviews()) == 1
-print(f"5. 审查记录入库 (#{rid}) 与 HTML/Markdown 报告导出 OK")
+
+# 5b. 模拟升级前的旧记录（结果中无 missing_sources），重新打开时自动补齐
+old_result = dict(result)
+old_result["label_check"] = {k: v for k, v in check.items()
+                             if k != "missing_sources"}
+old_rid = db.create_review(name="旧版记录", declared=DECLARED,
+                           text_a=TEXT_A, text_b=TEXT_B,
+                           label_a="现版配方", label_b="新版配方",
+                           result=old_result)
+old_review = db.get_review(old_rid)
+assert old_review["result"]["label_check"]["missing_sources"]["坚果"] == \
+    [["巧克力酱", "椰子粉"]]
+print(f"5. 审查记录入库 (#{rid}) 与 HTML/Markdown 报告导出 OK；旧记录回填 OK")
 print("\n全部集成冒烟测试通过 ✔")

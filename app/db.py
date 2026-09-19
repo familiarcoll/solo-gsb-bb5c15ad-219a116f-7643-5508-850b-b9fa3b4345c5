@@ -9,7 +9,7 @@ import threading
 from datetime import datetime, timedelta, timezone
 from typing import Dict, List, Optional, Set
 
-from .analysis import normalize_name
+from .analysis import missing_allergen_sources, normalize_name
 
 DB_PATH = os.environ.get("DB_PATH") or os.path.abspath(
     os.path.join(os.path.dirname(__file__), "..", "data", "app.db"))
@@ -135,11 +135,34 @@ def _row_to_review(row: sqlite.Row) -> dict:
     }
 
 
+def _backfill_missing_sources(r: dict) -> dict:
+    """历史记录兼容：补齐旧版结果中缺失的遗漏来源路径（missing_sources）。
+
+    依据记录内已持久化的配料树即时重算，无需修改库内 JSON，
+    因此升级前产生的审查记录重新打开时同样可以展开来源路径。
+    """
+    result = r.get("result") or {}
+    check = result.get("label_check")
+    if not check or "missing_sources" in check:
+        return r
+    missing = check.get("missing", [])
+    if not missing:
+        check["missing_sources"] = {}
+        return r
+    checked_label = result.get("label_check_version", r.get("label_a"))
+    version = (result.get("version_b")
+               if result.get("version_b") and checked_label == r.get("label_b")
+               else result.get("version_a"))
+    tree = (version or {}).get("tree", [])
+    check["missing_sources"] = missing_allergen_sources(tree, missing)
+    return r
+
+
 def get_review(rid: int) -> Optional[dict]:
     with _lock, _connect() as conn:
         row = conn.execute("SELECT * FROM reviews WHERE id = ?",
                            (rid,)).fetchone()
-    return _row_to_review(row) if row else None
+    return _backfill_missing_sources(_row_to_review(row)) if row else None
 
 
 def list_reviews() -> List[dict]:

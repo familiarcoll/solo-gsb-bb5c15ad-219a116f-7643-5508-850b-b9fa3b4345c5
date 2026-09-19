@@ -30,6 +30,34 @@ def _tree_html(nodes: List[dict]) -> str:
     return "<ul>" + "".join(items) + "</ul>"
 
 
+def _path_html(path: List[str]) -> str:
+    spans = []
+    for i, part in enumerate(path):
+        cls = " class='src-leaf'" if i == len(path) - 1 else ""
+        spans.append(f"<span{cls}>{_esc(part)}</span>")
+    return "<li>" + " <span class='arrow'>&rsaquo;</span> ".join(spans) + "</li>"
+
+
+def _missing_cell(check: dict) -> str:
+    """遗漏过敏原单元格：逐项列出来源路径，同名原料的不同分支路径不合并。"""
+    items = check.get("missing", [])
+    if not items:
+        return "<span class='none'>无</span>"
+    sources = check.get("missing_sources") or {}
+    blocks = []
+    for a in items:
+        paths = sources.get(a, [])
+        if paths:
+            path_items = "".join(_path_html(p) for p in paths)
+            detail = (f"<details class='src' open><summary>来源路径（{len(paths)}）</summary>"
+                      f"<ul class='src-paths'>{path_items}</ul></details>")
+        else:
+            detail = ""
+        blocks.append(
+            f"<div class='miss-item'><span class=\"badge miss\">{_esc(a)}</span>{detail}</div>")
+    return "".join(blocks)
+
+
 def _check_section(check: dict) -> str:
     def row(title, cls, items, hint):
         if items:
@@ -38,10 +66,15 @@ def _check_section(check: dict) -> str:
             badges = "<span class='none'>无</span>"
         return f"<tr><th>{title}</th><td>{badges}</td><td class='hint'>{hint}</td></tr>"
 
+    missing_row = (
+        "<tr><th>标签遗漏（必须补充）</th>"
+        f"<td>{_missing_cell(check)}</td>"
+        "<td class='hint'>配方中实际含有，但标签未声明的过敏原；"
+        "展开可查看嵌套配料树中的全部来源路径</td></tr>")
+
     return f"""
     <table class="check">
-      {row("标签遗漏（必须补充）", "miss", check.get("missing", []),
-            "配方中实际含有，但标签未声明的过敏原")}
+      {missing_row}
       {row("标签多报", "over", check.get("over_reported", []),
             "标签声明了，但配方中未检出的过敏原")}
       {row("声明一致", "ok", check.get("matched", []),
@@ -125,6 +158,13 @@ def render_html_report(review: dict) -> str:
  .none {{ color: #999; }}
  ul {{ line-height: 1.9; }}
  .meta {{ color: #666; }}
+ .miss-item {{ margin: 4px 0; }}
+ details.src {{ margin: 2px 0 4px; }}
+ details.src summary {{ cursor: pointer; color: #777; font-size: .85em; }}
+ ul.src-paths {{ margin: 4px 0; padding-left: 1.4em; line-height: 1.7; }}
+ ul.src-paths li {{ list-style: disc; }}
+ .arrow {{ color: #999; margin: 0 2px; }}
+ .src-leaf {{ font-weight: 600; color: #a00; }}
 </style></head><body>
 <h1>食品过敏原标签审查报告</h1>
 <p class="meta">审查名称：<b>{_esc(review['name'])}</b>
@@ -153,6 +193,21 @@ def _tree_md(nodes: List[dict], indent: int = 0) -> str:
     return "\n".join(l for l in lines if l)
 
 
+def _missing_md(check: dict) -> List[str]:
+    """遗漏过敏原及其在嵌套配料树中的全部来源路径（Markdown 列表）。"""
+    missing = check.get("missing", [])
+    lines = [f"- **标签遗漏（必须补充）**：{'、'.join(missing) if missing else '无'}"]
+    sources = check.get("missing_sources") or {}
+    for a in missing:
+        lines.append(f"  - **{a}**")
+        paths = sources.get(a) or []
+        if not paths:
+            lines.append("    - （无来源路径信息）")
+        for p in paths:
+            lines.append("    - " + " › ".join(p))
+    return lines
+
+
 def render_markdown_report(review: dict) -> str:
     result = review["result"]
     check = result["label_check"]
@@ -168,7 +223,7 @@ def render_markdown_report(review: dict) -> str:
         f"- 生成时间：{review['created_at']}\n",
         f"## 标签核对结论（核对对象：{checked}）\n",
         f"- 标签声明：{fmt(review['declared'])}",
-        f"- **标签遗漏（必须补充）**：{fmt(check['missing'])}",
+        *_missing_md(check),
         f"- **标签多报**：{fmt(check['over_reported'])}",
         f"- 声明一致：{fmt(check['matched'])}\n",
         f"## {review['label_a']}\n",

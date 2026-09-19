@@ -60,6 +60,13 @@
   .pill.gray { background: #eef1f4; color: #57606a; }
   a.link { color: var(--blue); cursor: pointer; text-decoration: none; }
   a.link:hover { text-decoration: underline; }
+  .miss-item { margin: 4px 0; }
+  .src-detail { margin: 2px 0 4px; }
+  .src-detail summary { cursor: pointer; color: #777; font-size: 12.5px; }
+  ul.src-paths { margin: 4px 0; padding-left: 20px; line-height: 1.8; }
+  ul.src-paths li { list-style: disc; }
+  .src-arrow { color: #999; margin: 0 2px; }
+  .src-leaf { font-weight: 600; color: var(--red); }
 </style>
 </head>
 <body>
@@ -261,6 +268,24 @@ function versionHtml(title, v) {
     <p>过敏原全集：${badges(v.allergens)}</p>${unknown}${treeHtml(v.tree)}</div>`;
 }
 
+function missingCell(check) {
+  if (!check.missing.length) return '<span class="hint">无</span>';
+  const sources = check.missing_sources || {};
+  return check.missing.map(a => {
+    const paths = sources[a] || [];
+    const detail = paths.length
+      ? `<details class="src-detail" open>
+           <summary>来源路径（${paths.length}）</summary>
+           <ul class="src-paths">${paths.map(p =>
+             '<li>' + p.map((part, i) =>
+               `<span${i === p.length - 1 ? ' class="src-leaf"' : ''}>${esc(part)}</span>`
+             ).join('<span class="src-arrow"> › </span>') + '</li>').join('')}</ul>
+         </details>`
+      : '';
+    return `<div class="miss-item"><span class="badge miss">${esc(a)}</span>${detail}</div>`;
+  }).join('');
+}
+
 function renderResult(r, meta) {
   $('result-section').classList.remove('hidden');
   $('result-title').textContent = meta && meta.name ? `— ${meta.name}` : '';
@@ -270,7 +295,7 @@ function renderResult(r, meta) {
       ${check.missing.length ? `<span class="pill red">遗漏 ${check.missing.length} 项</span>` : '<span class="pill green">无遗漏</span>'}
     </h3>
     <table>
-      <tr><th style="width:14em">标签遗漏（必须补充）</th><td>${badges(check.missing, 'miss')}</td></tr>
+      <tr><th style="width:14em">标签遗漏（必须补充）</th><td>${missingCell(check)}</td></tr>
       <tr><th>标签多报</th><td>${badges(check.over_reported, 'over')}</td></tr>
       <tr><th>声明一致</th><td>${badges(check.matched, 'ok')}</td></tr>
     </table></div>`;

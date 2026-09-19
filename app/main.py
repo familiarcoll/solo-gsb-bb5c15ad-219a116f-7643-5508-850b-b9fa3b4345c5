@@ -129,6 +129,7 @@ def _build_result(payload: ReviewCreate) -> dict:
         "label_check_version": payload.label_a,
     }
     check_allergens = version_a["allergens"]
+    checked_tree = version_a["tree"]
 
     if payload.text_b and payload.text_b.strip():
         tree_b = parse_recipe(payload.text_b)
@@ -139,8 +140,10 @@ def _build_result(payload: ReviewCreate) -> dict:
         result["ingredient_changes"] = diff_ingredients(tree_a, tree_b)
         result["label_check_version"] = payload.label_b
         check_allergens = version_b["allergens"]
+        checked_tree = version_b["tree"]
 
-    result["label_check"] = compare_label(check_allergens, payload.declared)
+    result["label_check"] = compare_label(
+        check_allergens, payload.declared, checked_tree)
     return result
 
 
