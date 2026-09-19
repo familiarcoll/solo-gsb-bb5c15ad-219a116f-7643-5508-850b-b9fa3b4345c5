@@ -1,7 +1,7 @@
 """过敏原传播、标签核对与版本比对。"""
 from __future__ import annotations
 
-from typing import Dict, Iterable, List, Set
+from typing import Dict, Iterable, List, Sequence, Set
 
 from .parser import IngredientNode
 
@@ -60,6 +60,43 @@ def compare_label(computed: Iterable[str], declared: Iterable[str]) -> dict:
         "over_reported": sorted(declared - computed),
         "matched": sorted(computed & declared),
     }
+
+
+def trace_allergen_paths(nodes: Sequence[IngredientNode],
+                         allergen: str) -> List[List[str]]:
+    """追踪某过敏原在配料树中的全部来源路径。
+
+    每条路径是从顶层配料到“实际贡献节点”的原料名序列：
+    - 节点自身标注了该过敏原 → 路径终止于该节点；
+    - 过敏原由子配料传播上来 → 路径继续向下延伸到实际贡献的后代节点；
+    - 自身标注与子配料传播并存时，两类路径都保留。
+
+    同名原料出现在不同分支时各自保留完整路径，不做合并；
+    同一位置重复出现的同名原料产生的相同路径会被去重，
+    最终结果按路径稳定排序，保证 API 输出可复现。
+    """
+    paths: List[List[str]] = []
+
+    def walk(node: IngredientNode, prefix: List[str]) -> None:
+        if allergen not in node.total_allergens:
+            return
+        current = prefix + [node.name]
+        if allergen in node.own_allergens:
+            paths.append(current)
+        for child in node.children:
+            walk(child, current)
+
+    for node in nodes:
+        walk(node, [])
+
+    unique = sorted({tuple(p) for p in paths})
+    return [list(p) for p in unique]
+
+
+def trace_missing_sources(nodes: Sequence[IngredientNode],
+                          missing: Iterable[str]) -> Dict[str, List[List[str]]]:
+    """为每个遗漏的过敏原计算来源路径，键按过敏原名稳定排序。"""
+    return {a: trace_allergen_paths(nodes, a) for a in sorted(set(missing))}
 
 
 def diff_allergens(old: Iterable[str], new: Iterable[str]) -> dict:

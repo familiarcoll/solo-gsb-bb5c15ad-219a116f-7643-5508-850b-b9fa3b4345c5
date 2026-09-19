@@ -19,7 +19,8 @@ from pydantic import BaseModel, Field
 
 from . import db
 from .analysis import (attach_allergens, collect_allergens, compare_label,
-                       diff_allergens, diff_ingredients, flatten)
+                       diff_allergens, diff_ingredients, flatten,
+                       trace_missing_sources)
 from .parser import parse_recipe
 from .report import render_html_report, render_markdown_report
 
@@ -129,6 +130,7 @@ def _build_result(payload: ReviewCreate) -> dict:
         "label_check_version": payload.label_a,
     }
     check_allergens = version_a["allergens"]
+    check_tree = tree_a
 
     if payload.text_b and payload.text_b.strip():
         tree_b = parse_recipe(payload.text_b)
@@ -139,8 +141,12 @@ def _build_result(payload: ReviewCreate) -> dict:
         result["ingredient_changes"] = diff_ingredients(tree_a, tree_b)
         result["label_check_version"] = payload.label_b
         check_allergens = version_b["allergens"]
+        check_tree = tree_b
 
     result["label_check"] = compare_label(check_allergens, payload.declared)
+    # 遗漏来源追踪：为每个遗漏过敏原保留其在配料树中的全部来源路径
+    result["label_check"]["missing_traces"] = trace_missing_sources(
+        check_tree, result["label_check"]["missing"])
     return result
 
 

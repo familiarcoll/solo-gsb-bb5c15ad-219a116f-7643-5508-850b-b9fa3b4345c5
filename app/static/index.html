@@ -48,6 +48,8 @@
   .error { color: var(--red); font-size: 13px; margin-top: 8px; }
   ul.tree { line-height: 2; margin: 6px 0; }
   ul.tree ul { margin-left: 4px; border-left: 2px dashed #d0d7de; padding-left: 18px; }
+  .trace-block { margin: 8px 0 4px; }
+  ul.trace-list { margin: 4px 0 10px 20px; line-height: 1.9; font-size: 13.5px; }
   .check-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
                 gap: 4px 10px; margin-top: 6px; }
   .check-grid label { display: flex; align-items: center; gap: 5px; margin: 0;
@@ -261,6 +263,23 @@ function versionHtml(title, v) {
     <p>过敏原全集：${badges(v.allergens)}</p>${unknown}${treeHtml(v.tree)}</div>`;
 }
 
+function missingTracesHtml(check) {
+  const traces = check.missing_traces || {};
+  const keys = Object.keys(traces).filter(a => (traces[a] || []).length);
+  if (!keys.length) return '';
+  const blocks = keys.map(a => {
+    const items = traces[a]
+      .map(p => `<li>${p.map(esc).join(' &gt; ')}</li>`).join('');
+    return `<div class="trace-block">
+      <span class="badge miss">${esc(a)}</span>
+      <span class="hint">（${traces[a].length} 条来源路径）</span>
+      <ul class="trace-list">${items}</ul></div>`;
+  }).join('');
+  return `<div class="result-block"><h3>遗漏来源追踪</h3>
+    <p class="hint">每个遗漏过敏原在配料树中的全部来源路径（顶层配料 → 实际贡献的原料）。</p>
+    ${blocks}</div>`;
+}
+
 function renderResult(r, meta) {
   $('result-section').classList.remove('hidden');
   $('result-title').textContent = meta && meta.name ? `— ${meta.name}` : '';
@@ -274,6 +293,7 @@ function renderResult(r, meta) {
       <tr><th>标签多报</th><td>${badges(check.over_reported, 'over')}</td></tr>
       <tr><th>声明一致</th><td>${badges(check.matched, 'ok')}</td></tr>
     </table></div>`;
+  html += missingTracesHtml(check);
   html += versionHtml('配方 A 解析树', r.version_a);
   if (r.version_b) html += versionHtml('配方 B 解析树', r.version_b);
   if (r.diff) {

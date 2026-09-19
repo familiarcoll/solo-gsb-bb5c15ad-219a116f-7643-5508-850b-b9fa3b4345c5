@@ -49,6 +49,28 @@ def _check_section(check: dict) -> str:
     </table>"""
 
 
+def _missing_traces_html(check: dict) -> str:
+    """遗漏来源追踪：按遗漏项展开其在配料树中的全部来源路径。"""
+    traces = check.get("missing_traces") or {}
+    blocks = []
+    for allergen, paths in traces.items():
+        if not paths:
+            continue
+        items = "".join(
+            f"<li>{' &gt; '.join(_esc(step) for step in path)}</li>"
+            for path in paths)
+        blocks.append(
+            f"<div class='trace'><span class='badge miss'>{_esc(allergen)}</span>"
+            f"<span class='hint'>（{len(paths)} 条来源路径）</span>"
+            f"<ul>{items}</ul></div>")
+    if not blocks:
+        return ""
+    return """
+    <h3>遗漏来源追踪</h3>
+    <p class="hint">每个遗漏过敏原在配料树中的全部来源路径（顶层配料 → 实际贡献的原料）。</p>
+    """ + "".join(blocks)
+
+
 def _version_section(title: str, version: dict) -> str:
     unknown = version.get("unknown_ingredients", [])
     unknown_html = (
@@ -124,6 +146,8 @@ def render_html_report(review: dict) -> str:
  .hint {{ color: #777; font-size: .85em; }}
  .none {{ color: #999; }}
  ul {{ line-height: 1.9; }}
+ .trace {{ margin: .4rem 0 .8rem; }}
+ .trace ul {{ margin: .3rem 0 .3rem 1.2rem; }}
  .meta {{ color: #666; }}
 </style></head><body>
 <h1>食品过敏原标签审查报告</h1>
@@ -133,6 +157,7 @@ def render_html_report(review: dict) -> str:
 <h2>标签核对结论（核对对象：{_esc(checked)}）</h2>
 <p>标签声明的过敏原：{declared}</p>
 {_check_section(result['label_check'])}
+{_missing_traces_html(result['label_check'])}
 
 <h2>配方解析与过敏原传播</h2>
 <p class="hint">深绿色徽章为该原料自身标注的过敏原，浅色徽章为子配料传播上来的过敏原。</p>
@@ -153,6 +178,21 @@ def _tree_md(nodes: List[dict], indent: int = 0) -> str:
     return "\n".join(l for l in lines if l)
 
 
+def _missing_traces_md(check: dict) -> List[str]:
+    """遗漏来源追踪（Markdown）：按遗漏项展开全部来源路径。"""
+    traces = check.get("missing_traces") or {}
+    lines: List[str] = []
+    for allergen, paths in traces.items():
+        if not paths:
+            continue
+        if not lines:
+            lines.append("### 遗漏来源追踪\n")
+        lines.append(f"- **{allergen}**（{len(paths)} 条来源路径）")
+        for path in paths:
+            lines.append(f"  - {' > '.join(path)}")
+    return lines
+
+
 def render_markdown_report(review: dict) -> str:
     result = review["result"]
     check = result["label_check"]
@@ -171,7 +211,10 @@ def render_markdown_report(review: dict) -> str:
         f"- **标签遗漏（必须补充）**：{fmt(check['missing'])}",
         f"- **标签多报**：{fmt(check['over_reported'])}",
         f"- 声明一致：{fmt(check['matched'])}\n",
-        f"## {review['label_a']}\n",
+    ]
+    parts += _missing_traces_md(check)
+    parts += [
+        f"\n## {review['label_a']}\n",
         f"过敏原全集：{fmt(result['version_a']['allergens'])}\n",
         _tree_md(result["version_a"]["tree"]),
     ]
